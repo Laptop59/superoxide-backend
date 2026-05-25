@@ -14,27 +14,31 @@ pub struct Database {
 impl Database {
     /// Attempts to initialize a pool of connections to a database and returns that.
     pub async fn create() -> SuperoxideResult<Self> {
-        let Ok(database_url) = Self::fetch_credentials_for_url() else {
-            tracing::error!(
-                "You have not set one or more required credentials properly! They are either unset or invalid UTF-8. \
-                You must set all the following environment variables: DB_USER, DB_PASS, DB_HOST, DB_NAME"
-            );
-            return Err(SuperoxideError::ImproperCredentials);
-        };
+        match Self::fetch_credentials_for_url() {
+            Ok(database_url) => {
+                let pool = MySqlPoolOptions::new()
+                    .max_connections(10)
+                    .connect(&database_url)
+                    .await;
 
-        let pool = MySqlPoolOptions::new()
-            .max_connections(10)
-            .connect(&database_url)
-            .await;
-
-        match pool {
-            Ok(pool) => {
-                tracing::info!("Successfully connected to the required database.");
-                Ok(Database { pool })
-            }
-            Err(error) => {
-                tracing::error!("Could not connect to the database: {error}");
-                Err(SuperoxideError::FailedDatabaseConnection)
+                match pool {
+                    Ok(pool) => {
+                        tracing::info!("Successfully connected to the required database.");
+                        Ok(Database { pool })
+                    }
+                    Err(error) => {
+                        tracing::error!("Could not connect to the database: {error}");
+                        Err(SuperoxideError::FailedDatabaseConnection)
+                    }
+                }
+            },
+            Err(VarError::NotPresent) => {
+                tracing::error!("The DATABASE_URL environment variable has not been set. It must be a URL pointing to a MySql/MariaDB database.");
+                Err(SuperoxideError::ImproperCredentials)
+            },
+            Err(VarError::NotUnicode(_)) => {
+                tracing::error!("The DATABASE_URL environment variable contains invalid Unicode data. Please make it valid UTF-8.");
+                Err(SuperoxideError::ImproperCredentials)
             }
         }
     }
