@@ -23,4 +23,7 @@ pub enum SuperoxideError {
 
     /// Could not bind the HTTP server successfully.
     BindingHTTPServerFailed = 5,
+
+    /// Database migration failed.
+    DatabaseMigrationFailed = 6,
 }

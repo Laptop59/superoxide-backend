@@ -37,6 +37,7 @@ async fn init() -> SuperoxideResult<()> {
 
     try_load_dotenv_file()?;
     let database = Database::create().await?;
+    database.migrate().await?;
 
     let server_state = Arc::new(ServerState {
         database,

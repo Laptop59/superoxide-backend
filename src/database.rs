@@ -44,11 +44,19 @@ impl Database {
     ///
     /// Returns a URL of the database to connect to it if successful.
     fn fetch_credentials_for_url() -> Result<String, VarError> {
-        let user = std::env::var("DB_USER")?;
-        let pass = std::env::var("DB_PASS")?;
-        let host = std::env::var("DB_HOST")?;
-        let name = std::env::var("DB_NAME")?;
+        std::env::var("DATABASE_URL")
+    }
 
-        Ok(format!("mysql://{user}:{pass}@{host}/{name}"))
+    /// Updates tables so that the schema is the latest.
+    pub async fn migrate(&self) -> Result<(), SuperoxideError> {
+        // We will initialize some tables for the user.
+        // To create new entries, we just need to run `sqlx migrate add <migration_name>`.
+        if let Err(error) = sqlx::migrate!().run(&self.pool).await {
+            tracing::error!("Could not migrate your database to the latest: {error}");
+            Err(SuperoxideError::DatabaseMigrationFailed)
+        } else {
+            tracing::info!("Database schema is confirmed to be up to date.");
+            Ok(())
+        }
     }
 }
