@@ -1,7 +1,5 @@
 use std::{sync::Arc, time::Instant};
 
-use colored::Colorize;
-
 use crate::{
     database::Database,
     error::{SuperoxideError, SuperoxideResult},
@@ -17,12 +15,17 @@ pub mod state;
 
 #[tokio::main]
 async fn main() {
-    let exit_code = match init().await {
-        Ok(()) => 0,
-        Err(error) => error as i32,
+    match init().await {
+        Ok(()) => {
+            tracing::info!("The server has stopped.");
+            std::process::exit(0);
+        }
+        Err(error) => {
+            tracing::error!("{error}");
+            tracing::info!("The server has stopped due to a fatal error.");
+            std::process::exit(error.exit_code());
+        }
     };
-    tracing::info!("The server has stopped.");
-    std::process::exit(exit_code);
 }
 
 async fn init() -> SuperoxideResult<()> {
@@ -30,10 +33,7 @@ async fn init() -> SuperoxideResult<()> {
 
     logger::init();
 
-    tracing::info!(
-        "Starting Superoxide {}...",
-        env!("CARGO_PKG_VERSION").bold()
-    );
+    tracing::info!("Starting Superoxide {}...", env!("CARGO_PKG_VERSION"));
 
     try_load_dotenv_file()?;
     let database = Database::create().await?;
@@ -52,17 +52,17 @@ async fn init() -> SuperoxideResult<()> {
 
 fn try_load_dotenv_file() -> SuperoxideResult<()> {
     match dotenvy::dotenv() {
-        Ok(load) => tracing::info!("Loaded environment variables from {}.", load.display()),
+        Ok(load) => {
+            tracing::info!("Loaded environment variables from {}.", load.display());
+            Ok(())
+        }
         Err(error) => {
             if error.not_found() {
                 tracing::debug!("Could not find a .env file to load environment variables from.");
+                Ok(())
             } else {
-                tracing::error!(
-                    "Could not load the .env file: {error}. The server will stop now to prevent unintended errors later down the line."
-                );
-                return Err(SuperoxideError::FailedToParseEnv);
+                Err(SuperoxideError::FailedToParseEnv(error))
             }
         }
     }
-    Ok(())
 }

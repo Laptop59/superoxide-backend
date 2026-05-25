@@ -1502,6 +1502,7 @@ dependencies = [
  "dotenvy",
  "serde_json",
  "sqlx",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",

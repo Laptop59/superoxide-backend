@@ -1,3 +1,5 @@
+pub mod users;
+
 use std::env::VarError;
 
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
@@ -26,19 +28,20 @@ impl Database {
                         tracing::info!("Successfully connected to the required database.");
                         Ok(Database { pool })
                     }
-                    Err(error) => {
-                        tracing::error!("Could not connect to the database: {error}");
-                        Err(SuperoxideError::FailedDatabaseConnection)
-                    }
+                    Err(error) => Err(SuperoxideError::FailedDatabaseConnection(error)),
                 }
-            },
+            }
             Err(VarError::NotPresent) => {
-                tracing::error!("The DATABASE_URL environment variable has not been set. It must be a URL pointing to a MySql/MariaDB database.");
-                Err(SuperoxideError::ImproperCredentials)
-            },
+                tracing::error!(
+                    "The DATABASE_URL environment variable has not been set. It must be a URL pointing to a MySql/MariaDB database."
+                );
+                Err(SuperoxideError::UnsetCredentials)
+            }
             Err(VarError::NotUnicode(_)) => {
-                tracing::error!("The DATABASE_URL environment variable contains invalid Unicode data. Please make it valid UTF-8.");
-                Err(SuperoxideError::ImproperCredentials)
+                tracing::error!(
+                    "The DATABASE_URL environment variable contains invalid Unicode data. Please make it valid."
+                );
+                Err(SuperoxideError::InvalidUnicodeCredentials)
             }
         }
     }
@@ -56,8 +59,7 @@ impl Database {
         // We will initialize some tables for the user.
         // To create new entries, we just need to run `sqlx migrate add <migration_name>`.
         if let Err(error) = sqlx::migrate!().run(&self.pool).await {
-            tracing::error!("Could not migrate your database to the latest: {error}");
-            Err(SuperoxideError::DatabaseMigrationFailed)
+            Err(SuperoxideError::DatabaseMigrationFailed(error))
         } else {
             tracing::info!("Database schema is confirmed to be up to date.");
             Ok(())

@@ -28,10 +28,9 @@ impl HttpServer {
             .with_state(self.server_state);
 
         let http_addr = "localhost:8080";
-        let listener = TcpListener::bind(http_addr).await.map_err(|error| {
-            tracing::error!("Could not bind HTTP server to address {http_addr}: {error}");
-            SuperoxideError::BindingHTTPServerFailed
-        })?;
+        let listener = TcpListener::bind(http_addr)
+            .await
+            .map_err(|error| SuperoxideError::BindingHTTPServerFailed(http_addr.into(), error))?;
 
         tracing::info!(
             "Started the HTTP server! It can be connected to with the address: {}",
