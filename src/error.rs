@@ -44,10 +44,6 @@ pub enum SuperoxideError {
         "The DATABASE_URL environment variable contains invalid Unicode data. Please make it valid."
     )]
     InvalidUnicodeCredentials = 7,
-
-    /// Some database error occured with an active database connectin.
-    #[error("Database Error: {0}")]
-    DatabaseError(sqlx::Error) = 8,
 }
 
 impl SuperoxideError {

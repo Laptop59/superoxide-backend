@@ -1500,6 +1500,7 @@ dependencies = [
  "chrono",
  "colored",
  "dotenvy",
+ "serde",
  "serde_json",
  "sqlx",
  "thiserror",

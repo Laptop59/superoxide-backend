@@ -14,3 +14,4 @@ sqlx = { version = "0.9", features = ["runtime-tokio", "mysql", "macros", "tls-r
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 thiserror = "2.0.18"
+serde = "1.0.228"

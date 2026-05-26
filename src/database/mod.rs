@@ -1,4 +1,4 @@
-pub mod users;
+pub mod user;
 
 use std::env::VarError;
 
@@ -64,5 +64,23 @@ impl Database {
             tracing::info!("Database schema is confirmed to be up to date.");
             Ok(())
         }
+    }
+}
+
+/// Represents a database error that has occured.
+#[derive(Debug)]
+pub struct DatabaseError {
+    inner: sqlx::Error,
+}
+
+impl From<sqlx::Error> for DatabaseError {
+    fn from(value: sqlx::Error) -> Self {
+        DatabaseError { inner: value }
+    }
+}
+
+impl std::fmt::Display for DatabaseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
     }
 }
