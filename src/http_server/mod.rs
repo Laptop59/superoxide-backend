@@ -1,24 +1,28 @@
-mod user;
+mod accounts;
 
 use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::State,
-    http::StatusCode,
+    extract::{FromRequestParts, Query, State},
+    http::{HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
 };
 use colored::Colorize;
+use serde::de::DeserializeOwned;
 use serde_json::json;
 use tokio::net::TcpListener;
+use tower_http::cors::CorsLayer;
 
 use crate::{
     database::DatabaseError,
     error::{SuperoxideError, SuperoxideResult},
-    http_server::user::UserModule,
+    http_server::accounts::AccountsModule,
     state::ServerState,
 };
+
+pub const FRONTEND_ORIGIN: HeaderValue = HeaderValue::from_static("http://localhost:5173");
 
 /// The Superoxide subsystem that handles HTTP requests
 /// for API usage.
@@ -33,9 +37,18 @@ impl HttpServer {
     }
 
     pub async fn run(self) -> SuperoxideResult<()> {
+        let cors = CorsLayer::new()
+            .allow_origin(FRONTEND_ORIGIN)
+            .allow_methods([
+                Method::GET,
+                Method::POST
+            ]);
+
         let app = Router::new()
             .route("/", get(Self::status))
-            .register::<UserModule>()
+            .register::<AccountsModule>()
+            .fallback(Self::not_found)
+            .layer(cors)
             .with_state(self.server_state);
 
         let http_addr = "localhost:8080";
@@ -53,6 +66,10 @@ impl HttpServer {
             .expect("HTTP server returned an error when it should not");
 
         Ok(())
+    }
+
+    async fn not_found() -> HttpServerError {
+        HttpServerError::NotFound
     }
 }
 
@@ -73,6 +90,7 @@ pub enum HttpServerError {
     Unauthorized,
     InternalServerError,
     DatabaseError(DatabaseError),
+    InvalidParameters,
 }
 
 impl IntoResponse for HttpServerError {
@@ -111,6 +129,13 @@ impl IntoResponse for HttpServerError {
                 )
                     .into_response()
             }
+            Self::InvalidParameters => (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "status": "invalid_parameters"
+                })),
+            )
+                .into_response(),
         }
     }
 }
@@ -134,5 +159,29 @@ trait HttpServerModuleRegister {
 impl HttpServerModuleRegister for Router<Arc<ServerState>> {
     fn register<M: HttpServerModule>(self) -> Self {
         M::configure(self)
+    }
+}
+
+/// Represent query parameters used in HTTP requests.
+/// This will give its own kind of query error, so that's
+/// why this one is preferred over [`Query`]; it does not
+/// expose internal server details.
+pub struct ApiQuery<T>(pub T);
+
+impl<S, T> FromRequestParts<S> for ApiQuery<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned,
+{
+    type Rejection = HttpServerError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        match Query::<T>::from_request_parts(parts, state).await {
+            Ok(Query(value)) => Ok(ApiQuery(value)),
+            Err(_) => Err(HttpServerError::InvalidParameters),
+        }
     }
 }

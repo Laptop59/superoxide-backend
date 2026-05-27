@@ -2,15 +2,11 @@
 
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::{Query, State},
-    routing::get,
-};
+use axum::{Json, Router, extract::State, routing::get};
 use serde::Deserialize;
 
 use crate::{
-    http_server::{HttpServerModule, HttpServerResponse},
+    http_server::{ApiQuery, HttpServerModule, HttpServerResponse},
     state::{ServerState, UsernameAvailability},
 };
 
@@ -19,21 +15,21 @@ struct UsernameAvailabilityQuery {
     username: String,
 }
 
-pub struct UserModule;
+pub struct AccountsModule;
 
-impl HttpServerModule for UserModule {
+impl HttpServerModule for AccountsModule {
     fn configure(router: Router<Arc<ServerState>>) -> Router<Arc<ServerState>> {
         router.route(
-            "/users/username-availability",
+            "/accounts/username-availability",
             get(Self::username_availability),
         )
     }
 }
 
-impl UserModule {
+impl AccountsModule {
     async fn username_availability(
         State(state): State<Arc<ServerState>>,
-        Query(query): Query<UsernameAvailabilityQuery>,
+        ApiQuery(query): ApiQuery<UsernameAvailabilityQuery>,
     ) -> HttpServerResponse<Json<UsernameAvailability>> {
         Ok(Json(state.username_availability(&query.username).await?))
     }

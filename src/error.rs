@@ -13,9 +13,10 @@ pub type SuperoxideResult<T> = Result<T, SuperoxideError>;
 #[repr(i32)]
 pub enum SuperoxideError {
     // Zero is not assigned because that should be returned for a success.
-    /// Generic error that is not helpful.
+
+    /// Generic error.
     #[error("Generic error")]
-    Generic = 1,
+    Generic(Box<str>) = 1,
 
     /// A startup error when the credentials were not set.
     #[error(

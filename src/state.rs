@@ -19,6 +19,7 @@ pub enum UsernameValidationError {
     TooShort,
     TooLong,
     InvalidCharacters,
+    ContainsSpaces
 }
 /// Tells the state of the availability of a username.
 #[derive(Serialize)]
@@ -36,14 +37,14 @@ impl ServerState {
         match username.len() {
             0..=2 => Err(UsernameValidationError::TooShort),
             3..=32 => {
-                if username
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
-                {
-                    Ok(())
-                } else {
-                    Err(UsernameValidationError::InvalidCharacters)
+                for byte in username.as_bytes() {
+                    match byte {
+                        b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'-' | b'.' => (),
+                        b' ' => return Err(UsernameValidationError::ContainsSpaces),
+                        _ => return Err(UsernameValidationError::InvalidCharacters),
+                    }
                 }
+                Ok(())
             }
             33.. => Err(UsernameValidationError::TooLong),
         }
