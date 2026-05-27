@@ -8,11 +8,10 @@ use axum::{
     routing::get,
 };
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::{
     http_server::{HttpServerModule, HttpServerResponse},
-    state::ServerState,
+    state::{ServerState, UsernameAvailability},
 };
 
 #[derive(Deserialize)]
@@ -35,13 +34,7 @@ impl UserModule {
     async fn username_availability(
         State(state): State<Arc<ServerState>>,
         Query(query): Query<UsernameAvailabilityQuery>,
-    ) -> HttpServerResponse<Json<serde_json::Value>> {
-        let exists = state
-            .database
-            .user_exists(&query.username)
-            .await?;
-        Ok(Json(json!({
-            "available": !exists
-        })))
+    ) -> HttpServerResponse<Json<UsernameAvailability>> {
+        Ok(Json(state.username_availability(&query.username).await?))
     }
 }
