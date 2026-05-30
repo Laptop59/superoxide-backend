@@ -2,6 +2,8 @@ use std::borrow::Cow;
 
 use thiserror::Error;
 
+use crate::database::DatabaseError;
+
 /// Represents an overall result of the Superoxide server.
 pub type SuperoxideResult<T> = Result<T, SuperoxideError>;
 
@@ -13,7 +15,6 @@ pub type SuperoxideResult<T> = Result<T, SuperoxideError>;
 #[repr(i32)]
 pub enum SuperoxideError {
     // Zero is not assigned because that should be returned for a success.
-
     /// Generic error.
     #[error("Generic error")]
     Generic(Box<str>) = 1,
@@ -45,6 +46,13 @@ pub enum SuperoxideError {
         "The DATABASE_URL environment variable contains invalid Unicode data. Please make it valid."
     )]
     InvalidUnicodeCredentials = 7,
+
+    #[error("Database error occured: {0}")]
+    DatabaseError(DatabaseError) = 8,
+
+    /// A hashing error occured.
+    #[error("Hashing failed: {0}")]
+    HashingError(argon2::password_hash::Error) = 9,
 }
 
 impl SuperoxideError {
@@ -52,5 +60,17 @@ impl SuperoxideError {
         // SAFETY: SuperoxideError is marked `repr(i32)`, so it should be totally
         // safe to cast the discriminant to an integer equivalent.
         unsafe { *std::ptr::from_ref::<Self>(self).cast::<i32>() }
+    }
+}
+
+impl From<DatabaseError> for SuperoxideError {
+    fn from(value: DatabaseError) -> Self {
+        Self::DatabaseError(value)
+    }
+}
+
+impl From<argon2::password_hash::Error> for SuperoxideError {
+    fn from(value: argon2::password_hash::Error) -> Self {
+        Self::HashingError(value)
     }
 }

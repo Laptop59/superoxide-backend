@@ -1,11 +1,11 @@
 mod accounts;
 
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
     Json, Router,
     extract::{FromRequestParts, Query, State},
-    http::{HeaderValue, Method, StatusCode},
+    http::{HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
 };
@@ -13,7 +13,9 @@ use colored::Colorize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use tokio::net::TcpListener;
-use tower_http::cors::CorsLayer;
+use tower_cookies::CookieManagerLayer;
+use tower_governor::GovernorError;
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::{
     database::DatabaseError,
@@ -38,16 +40,16 @@ impl HttpServer {
 
     pub async fn run(self) -> SuperoxideResult<()> {
         let cors = CorsLayer::new()
-            .allow_origin(FRONTEND_ORIGIN)
-            .allow_methods([
-                Method::GET,
-                Method::POST
-            ]);
+            .allow_origin(Any) // for development
+            // .allow_origin(FRONTEND_ORIGIN)
+            .allow_methods([Method::GET, Method::POST])
+            .allow_headers([header::CONTENT_TYPE]);
 
         let app = Router::new()
             .route("/", get(Self::status))
             .register::<AccountsModule>()
             .fallback(Self::not_found)
+            .layer(CookieManagerLayer::new())
             .layer(cors)
             .with_state(self.server_state);
 
@@ -61,15 +63,22 @@ impl HttpServer {
             format!("http://{http_addr}").underline().bold()
         );
 
-        axum::serve(listener, app)
-            .await
-            .expect("HTTP server returned an error when it should not");
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .expect("HTTP server returned an error when it should not");
 
         Ok(())
     }
 
     async fn not_found() -> HttpServerError {
         HttpServerError::NotFound
+    }
+
+    fn too_many_requests_handler(_: GovernorError) -> Response {
+        HttpServerError::TooManyRequests.into_response()
     }
 }
 
@@ -88,9 +97,9 @@ pub type HttpServerResponse<T> = Result<T, HttpServerError>;
 pub enum HttpServerError {
     NotFound,
     Unauthorized,
-    InternalServerError,
-    DatabaseError(DatabaseError),
+    InternalServerError(SuperoxideError),
     InvalidParameters,
+    TooManyRequests,
 }
 
 impl IntoResponse for HttpServerError {
@@ -110,16 +119,9 @@ impl IntoResponse for HttpServerError {
                 })),
             )
                 .into_response(),
-            Self::InternalServerError => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "status": "internal_server_error"
-                })),
-            )
-                .into_response(),
-            Self::DatabaseError(database_error) => {
+            Self::InternalServerError(error) => {
                 tracing::error!(
-                    "Database error encountered while serving HTTP request: {database_error}"
+                    "Internal server error encountered while serving HTTP request: {error}"
                 );
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -136,13 +138,26 @@ impl IntoResponse for HttpServerError {
                 })),
             )
                 .into_response(),
+            Self::TooManyRequests => (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({
+                    "status": "too_many_requests"
+                })),
+            )
+                .into_response(),
         }
+    }
+}
+
+impl From<SuperoxideError> for HttpServerError {
+    fn from(value: SuperoxideError) -> Self {
+        HttpServerError::InternalServerError(value)
     }
 }
 
 impl From<DatabaseError> for HttpServerError {
     fn from(value: DatabaseError) -> Self {
-        HttpServerError::DatabaseError(value)
+        HttpServerError::InternalServerError(SuperoxideError::DatabaseError(value))
     }
 }
 

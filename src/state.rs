@@ -1,7 +1,14 @@
+use argon2::{
+    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+    password_hash::{
+        SaltString,
+        rand_core::{OsRng, RngCore},
+    },
+};
 use serde::Serialize;
-use std::time::Instant;
+use std::{borrow::Cow, time::Instant};
 
-use crate::database::{Database, DatabaseError};
+use crate::{database::Database, error::SuperoxideError};
 
 /// The server's global state.
 pub struct ServerState {
@@ -19,8 +26,9 @@ pub enum UsernameValidationError {
     TooShort,
     TooLong,
     InvalidCharacters,
-    ContainsSpaces
+    ContainsSpaces,
 }
+
 /// Tells the state of the availability of a username.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case", tag = "status", content = "reason")]
@@ -29,6 +37,24 @@ pub enum UsernameAvailability {
     AlreadyTaken,
     Invalid(UsernameValidationError),
 }
+
+/// Tells the result of an attempt to create an account.
+/// Should not be given to the front-end as it contains
+/// the internal user ID.
+pub enum AccountRegistrationResult {
+    Successful(u64),
+    UsernameAlreadyTaken,
+    InvalidUsername,
+}
+
+/// Tells the result of an attempt to log into an account.
+pub enum AccountLoginResult {
+    Successful(u64),
+    IncorrectUsernameOrPassword,
+}
+
+/// Tells that the password provided was invalid.
+pub struct InvalidPassword;
 
 impl ServerState {
     /// Takes a username and returns if it is valid for a user to exist with the given name.
@@ -50,13 +76,25 @@ impl ServerState {
         }
     }
 
+    pub fn validate_password(password: &str) -> Result<(), InvalidPassword> {
+        const MIN_LENGTH: usize = 12;
+        const MAX_LENGTH: usize = 256;
+
+        // Length restriction.
+        if !(MIN_LENGTH..=MAX_LENGTH).contains(&password.len()) {
+            return Err(InvalidPassword);
+        }
+
+        Ok(())
+    }
+
     /// Takes a username and returns if it is available, already taken or invalid.
     /// Do not use this to check if a username is available when creating a user, as that
     /// can lead to data races.
     pub async fn username_availability(
         &self,
         username: &str,
-    ) -> Result<UsernameAvailability, DatabaseError> {
+    ) -> Result<UsernameAvailability, SuperoxideError> {
         Ok(
             if let Err(validation_error) = Self::validate_username(username) {
                 UsernameAvailability::Invalid(validation_error)
@@ -66,5 +104,99 @@ impl ServerState {
                 UsernameAvailability::Available
             },
         )
+    }
+
+    pub async fn hash_password(
+        password: impl Into<Cow<'_, str>>,
+    ) -> Result<String, SuperoxideError> {
+        let password = password.into().into_owned();
+
+        tokio::task::spawn_blocking(move || {
+            let salt = SaltString::generate(&mut OsRng);
+            let argon2 = Argon2::default();
+
+            argon2
+                .hash_password(password.as_bytes(), &salt)
+                .map(|hash| hash.to_string())
+                .map_err(SuperoxideError::HashingError)
+        })
+        .await
+        .expect("Hashing thread shouldn't have panicked")
+    }
+
+    pub async fn verify_password(
+        password: impl Into<Cow<'_, str>>,
+        password_hash: impl Into<Cow<'_, str>>,
+    ) -> Result<bool, SuperoxideError> {
+        let password = password.into().into_owned();
+        let password_hash = password_hash.into().into_owned();
+
+        tokio::task::spawn_blocking(move || {
+            let parsed_hash = PasswordHash::new(&password_hash)?;
+            let argon2 = Argon2::default();
+
+            match argon2.verify_password(password.as_bytes(), &parsed_hash) {
+                Ok(()) => Ok(true),
+                Err(argon2::password_hash::Error::Password) => Ok(false),
+                Err(error) => Err(SuperoxideError::HashingError(error)),
+            }
+        })
+        .await
+        .expect("Hashing thread shouldn't have panicked")
+    }
+
+    /// Takes a username and password and attempts to create an account with them.
+    /// Checks for username validity.
+    /// **Does not create a new session.**
+    pub async fn register_account(
+        &self,
+        username: &str,
+        password: impl Into<Cow<'_, str>>,
+    ) -> Result<AccountRegistrationResult, SuperoxideError> {
+        if Self::validate_username(username).is_err() {
+            return Ok(AccountRegistrationResult::InvalidUsername);
+        }
+
+        let password_hash = Self::hash_password(password).await?;
+        let Some(user_id) = self
+            .database
+            .create_account(username, &password_hash)
+            .await?
+        else {
+            return Ok(AccountRegistrationResult::UsernameAlreadyTaken);
+        };
+
+        Ok(AccountRegistrationResult::Successful(user_id))
+    }
+
+    /// Takes a username and password and attempts to log in an account from the given credentials.
+    /// **Does not create a new session.**
+    pub async fn login_account(
+        &self,
+        username: &str,
+        password: impl Into<Cow<'_, str>>,
+    ) -> Result<AccountLoginResult, SuperoxideError> {
+        let Some(user_login) = self
+            .database
+            .fetch_user_login_from_username(username)
+            .await?
+        else {
+            return Ok(AccountLoginResult::IncorrectUsernameOrPassword);
+        };
+
+        if Self::verify_password(password, user_login.password_hash).await? {
+            Ok(AccountLoginResult::Successful(user_login.id))
+        } else {
+            Ok(AccountLoginResult::IncorrectUsernameOrPassword)
+        }
+    }
+
+    /// Creates a session token for the user.
+    pub async fn create_session_token(&self, user_id: u64) -> Result<String, SuperoxideError> {
+        let mut bytes = [0u8; 32];
+        OsRng.fill_bytes(&mut bytes);
+        let token = hex::encode(bytes);
+        self.database.create_session(user_id, &token).await?;
+        Ok(token)
     }
 }

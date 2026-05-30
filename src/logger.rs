@@ -72,6 +72,6 @@ where
 pub fn init() {
     tracing_subscriber::fmt()
         .event_format(SuperoxideFormatEvent)
-        .with_max_level(LevelFilter::from_level(Level::DEBUG))
+        .with_max_level(LevelFilter::from_level(Level::INFO))
         .init();
 }
