@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
 use crate::{
-    http_server::{ApiQuery, HttpServer, HttpServerModule, HttpServerResponse},
+    http_server::{
+        ApiQuery, FrontendUserDetails, HttpServer, HttpServerModule, HttpServerResponse,
+    },
     state::{AccountLoginResult, AccountRegistrationResult, ServerState, UsernameAvailability},
 };
 
@@ -31,7 +33,7 @@ struct LoginRequestBody {
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case", tag = "status")]
 enum RegisterResponse {
-    Successful,
+    Successful { user: FrontendUserDetails },
     UsernameAlreadyTaken,
     InvalidUsername,
 }
@@ -39,7 +41,7 @@ enum RegisterResponse {
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case", tag = "status")]
 enum LoginResponse {
-    Successful,
+    Successful { user: FrontendUserDetails },
     IncorrectUsernameOrPassword,
 }
 
@@ -76,16 +78,16 @@ impl HttpServerModule for AccountsModule {
             );
 
         // Login route
-        let login_router =
-            Router::new()
-                .route("/login", post(Self::login))
-                .layer(GovernorLayer::new(
-                    GovernorConfigBuilder::default()
-                        .per_millisecond(600)
-                        .burst_size(5)
-                        .finish()
-                        .expect("Governor should have been built properly"),
-                ).error_handler(HttpServer::too_many_requests_handler),);
+        let login_router = Router::new().route("/login", post(Self::login)).layer(
+            GovernorLayer::new(
+                GovernorConfigBuilder::default()
+                    .per_millisecond(600)
+                    .burst_size(5)
+                    .finish()
+                    .expect("Governor should have been built properly"),
+            )
+            .error_handler(HttpServer::too_many_requests_handler),
+        );
 
         router.nest(
             "/accounts",
@@ -112,7 +114,14 @@ impl AccountsModule {
                 .await?
             {
                 AccountRegistrationResult::Successful(user_id) => {
-                    Self::send_new_session(&state, user_id, RegisterResponse::Successful).await?
+                    Self::send_new_session(
+                        &state,
+                        user_id,
+                        RegisterResponse::Successful {
+                            user: state.get_frontend_user_details(user_id).await?,
+                        },
+                    )
+                    .await?
                 }
                 AccountRegistrationResult::UsernameAlreadyTaken => (
                     StatusCode::CONFLICT,
@@ -135,7 +144,14 @@ impl AccountsModule {
         Ok(
             match state.login_account(&query.username, query.password).await? {
                 AccountLoginResult::Successful(user_id) => {
-                    Self::send_new_session(&state, user_id, LoginResponse::Successful).await?
+                    Self::send_new_session(
+                        &state,
+                        user_id,
+                        LoginResponse::Successful {
+                            user: state.get_frontend_user_details(user_id).await?,
+                        },
+                    )
+                    .await?
                 }
                 AccountLoginResult::IncorrectUsernameOrPassword => (
                     StatusCode::UNAUTHORIZED,

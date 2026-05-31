@@ -5,7 +5,8 @@ edition = "2024"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-axum = "0.8"
+axum = { version = "0.8", features = ["macros"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
@@ -15,7 +16,6 @@ sqlx = { version = "0.9", features = ["runtime-tokio", "mysql", "macros", "tls-r
 serde = "1.0"
 serde_json = "1.0"
 
-tower-cookies = "0.10"
 tower_governor = { version = "0.8", features = ["axum", "tracing"] }
 tower-http = { version = "0.6", features = ["cors"] }
 

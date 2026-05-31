@@ -7,6 +7,11 @@ pub struct UserLogin {
     pub password_hash: String,
 }
 
+/// The superficial details of a user.
+pub struct UserDetails {
+    pub username: String,
+}
+
 impl Database {
     /// Returns the user ID from the name of a user.
     pub async fn fetch_user_id(&self, username: &str) -> Result<Option<u64>, DatabaseError> {
@@ -20,9 +25,24 @@ impl Database {
         .fetch_optional(&self.pool)
         .await;
 
-        query_result
-            .map(|option| option.map(|record| record.id))
-            .map_err(Into::into)
+        Ok(query_result?.map(|record| record.id))
+    }
+
+    /// Returns user details from the ID of a user.
+    pub async fn fetch_user_details(&self, id: u64) -> Result<Option<UserDetails>, DatabaseError> {
+        let query_result = sqlx::query!(
+            r#"
+            SELECT username from users
+            WHERE id = ?
+            "#,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await;
+
+        Ok(query_result?.map(|record| UserDetails {
+            username: record.username,
+        }))
     }
 
     /// Returns a struct useful for logging in a user from their name.
@@ -40,14 +60,10 @@ impl Database {
         .fetch_optional(&self.pool)
         .await;
 
-        query_result
-            .map(|option| {
-                option.map(|record| UserLogin {
-                    id: record.id,
-                    password_hash: record.password_hash,
-                })
-            })
-            .map_err(Into::into)
+        Ok(query_result?.map(|record| UserLogin {
+            id: record.id,
+            password_hash: record.password_hash,
+        }))
     }
 
     /// Returns whether the user with the given name exists.
@@ -92,25 +108,5 @@ impl Database {
                 }
             }
         }
-    }
-
-    /// Attempts to create a session to the database for a given user.
-    pub async fn create_session(&self, user_id: u64, token: &str) -> Result<(), DatabaseError> {
-        sqlx::query!(
-            r#"
-            INSERT INTO sessions (
-                token,
-                user_id,
-                created_at,
-                updated_at
-            ) VALUES (?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
-            "#,
-            token,
-            user_id
-        )
-        .execute(&self.pool)
-        .await
-        .map(|_| ())
-        .map_err(Into::into)
     }
 }

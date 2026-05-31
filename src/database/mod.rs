@@ -1,3 +1,4 @@
+pub mod session;
 pub mod user;
 
 use std::env::VarError;
@@ -55,7 +56,7 @@ impl Database {
     }
 
     /// Updates tables so that the schema is the latest.
-    pub async fn migrate(&self) -> Result<(), SuperoxideError> {
+    pub async fn migrate(&self) -> SuperoxideResult<()> {
         // We will initialize some tables for the user.
         // To create new entries, we just need to run `sqlx migrate add <migration_name>`.
         if let Err(error) = sqlx::migrate!().run(&self.pool).await {

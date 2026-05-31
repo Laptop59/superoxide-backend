@@ -8,7 +8,11 @@ use argon2::{
 use serde::Serialize;
 use std::{borrow::Cow, time::Instant};
 
-use crate::{database::Database, error::SuperoxideError};
+use crate::{
+    database::Database,
+    error::{SuperoxideError, SuperoxideResult},
+    http_server::{FrontendUserDetails, HttpServerError},
+};
 
 /// The server's global state.
 pub struct ServerState {
@@ -94,7 +98,7 @@ impl ServerState {
     pub async fn username_availability(
         &self,
         username: &str,
-    ) -> Result<UsernameAvailability, SuperoxideError> {
+    ) -> SuperoxideResult<UsernameAvailability> {
         Ok(
             if let Err(validation_error) = Self::validate_username(username) {
                 UsernameAvailability::Invalid(validation_error)
@@ -106,9 +110,7 @@ impl ServerState {
         )
     }
 
-    pub async fn hash_password(
-        password: impl Into<Cow<'_, str>>,
-    ) -> Result<String, SuperoxideError> {
+    pub async fn hash_password(password: impl Into<Cow<'_, str>>) -> SuperoxideResult<String> {
         let password = password.into().into_owned();
 
         tokio::task::spawn_blocking(move || {
@@ -127,7 +129,7 @@ impl ServerState {
     pub async fn verify_password(
         password: impl Into<Cow<'_, str>>,
         password_hash: impl Into<Cow<'_, str>>,
-    ) -> Result<bool, SuperoxideError> {
+    ) -> SuperoxideResult<bool> {
         let password = password.into().into_owned();
         let password_hash = password_hash.into().into_owned();
 
@@ -152,7 +154,7 @@ impl ServerState {
         &self,
         username: &str,
         password: impl Into<Cow<'_, str>>,
-    ) -> Result<AccountRegistrationResult, SuperoxideError> {
+    ) -> SuperoxideResult<AccountRegistrationResult> {
         if Self::validate_username(username).is_err() {
             return Ok(AccountRegistrationResult::InvalidUsername);
         }
@@ -175,7 +177,7 @@ impl ServerState {
         &self,
         username: &str,
         password: impl Into<Cow<'_, str>>,
-    ) -> Result<AccountLoginResult, SuperoxideError> {
+    ) -> SuperoxideResult<AccountLoginResult> {
         let Some(user_login) = self
             .database
             .fetch_user_login_from_username(username)
@@ -192,11 +194,26 @@ impl ServerState {
     }
 
     /// Creates a session token for the user.
-    pub async fn create_session_token(&self, user_id: u64) -> Result<String, SuperoxideError> {
+    pub async fn create_session_token(&self, user_id: u64) -> SuperoxideResult<String> {
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
         let token = hex::encode(bytes);
         self.database.create_session(user_id, &token).await?;
         Ok(token)
+    }
+
+    pub async fn get_frontend_user_details(
+        &self,
+        user_id: u64,
+    ) -> Result<FrontendUserDetails, HttpServerError> {
+        let user_details = self
+            .database
+            .fetch_user_details(user_id)
+            .await?
+            .ok_or(HttpServerError::Unauthorized)?;
+
+        Ok(FrontendUserDetails {
+            username: user_details.username,
+        })
     }
 }

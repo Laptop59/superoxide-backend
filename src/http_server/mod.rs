@@ -1,4 +1,5 @@
 mod accounts;
+mod me;
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -9,18 +10,18 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use axum_extra::extract::CookieJar;
 use colored::Colorize;
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
 use tokio::net::TcpListener;
-use tower_cookies::CookieManagerLayer;
 use tower_governor::GovernorError;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 use crate::{
     database::DatabaseError,
     error::{SuperoxideError, SuperoxideResult},
-    http_server::accounts::AccountsModule,
+    http_server::{accounts::AccountsModule, me::MeModule},
     state::ServerState,
 };
 
@@ -40,16 +41,16 @@ impl HttpServer {
 
     pub async fn run(self) -> SuperoxideResult<()> {
         let cors = CorsLayer::new()
-            .allow_origin(Any) // for development
-            // .allow_origin(FRONTEND_ORIGIN)
+            .allow_origin(FRONTEND_ORIGIN)
+            .allow_credentials(true)
             .allow_methods([Method::GET, Method::POST])
             .allow_headers([header::CONTENT_TYPE]);
 
         let app = Router::new()
             .route("/", get(Self::status))
             .register::<AccountsModule>()
+            .register::<MeModule>()
             .fallback(Self::not_found)
-            .layer(CookieManagerLayer::new())
             .layer(cors)
             .with_state(self.server_state);
 
@@ -199,4 +200,40 @@ where
             Err(_) => Err(HttpServerError::InvalidParameters),
         }
     }
+}
+
+/// Represents a valid user's session.
+/// If this is received in a handler, it can be assumed that
+/// the authentication stage has been passed for determining the user.
+pub struct Session {
+    user_id: u64,
+}
+
+impl FromRequestParts<Arc<ServerState>> for Session {
+    type Rejection = HttpServerError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &Arc<ServerState>,
+    ) -> Result<Self, Self::Rejection> {
+        let jar = CookieJar::from_headers(&parts.headers);
+        let Some(token) = jar.get("session") else {
+            return Err(HttpServerError::Unauthorized);
+        };
+        let token = token.value();
+
+        // Find a session from this token.
+        let Some(user_id) = state.database.find_session(token).await? else {
+            return Err(HttpServerError::Unauthorized);
+        };
+
+        Ok(Self { user_id })
+    }
+}
+
+/// The subset of user details sent to the frontend
+/// so that it can know who it is representing.
+#[derive(Serialize)]
+pub struct FrontendUserDetails {
+    pub username: String,
 }
