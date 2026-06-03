@@ -6,6 +6,7 @@ use argon2::{
     },
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{borrow::Cow, time::Instant};
 
 use crate::{
@@ -193,13 +194,22 @@ impl ServerState {
         }
     }
 
-    /// Creates a session token for the user.
-    pub async fn create_session_token(&self, user_id: u64) -> SuperoxideResult<String> {
+    /// Creates a session for the user.
+    pub async fn create_session(&self, user_id: u64) -> SuperoxideResult<Box<str>> {
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
+
+        let token_hash = Self::hash_token_bytes(&bytes);
+
         let token = hex::encode(bytes);
-        self.database.create_session(user_id, &token).await?;
-        Ok(token)
+        self.database.create_session(user_id, &token_hash).await?;
+        Ok(token.into_boxed_str())
+    }
+
+    /// Revokes a session from a user. Does not actually tell if the token got revoked or not.
+    pub async fn revoke_session(&self, session_id: u64) -> SuperoxideResult<()> {
+        self.database.revoke_session(session_id).await?;
+        Ok(())
     }
 
     pub async fn get_frontend_user_details(
@@ -215,5 +225,10 @@ impl ServerState {
         Ok(FrontendUserDetails {
             username: user_details.username,
         })
+    }
+
+    /// Uses SHA-256 hashing on token bytes to get a hash that is one-way.
+    pub fn hash_token_bytes(bytes: &[u8]) -> [u8; 32] {
+        Sha256::digest(bytes).into()
     }
 }

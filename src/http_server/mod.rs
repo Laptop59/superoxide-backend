@@ -19,7 +19,7 @@ use tower_governor::GovernorError;
 use tower_http::cors::CorsLayer;
 
 use crate::{
-    database::DatabaseError,
+    database::{self, DatabaseError},
     error::{SuperoxideError, SuperoxideResult},
     http_server::{accounts::AccountsModule, me::MeModule},
     state::ServerState,
@@ -43,7 +43,7 @@ impl HttpServer {
         let cors = CorsLayer::new()
             .allow_origin(FRONTEND_ORIGIN)
             .allow_credentials(true)
-            .allow_methods([Method::GET, Method::POST])
+            .allow_methods([Method::GET, Method::POST, Method::DELETE])
             .allow_headers([header::CONTENT_TYPE]);
 
         let app = Router::new()
@@ -207,6 +207,7 @@ where
 /// the authentication stage has been passed for determining the user.
 pub struct Session {
     user_id: u64,
+    session_id: u64,
 }
 
 impl FromRequestParts<Arc<ServerState>> for Session {
@@ -222,12 +223,30 @@ impl FromRequestParts<Arc<ServerState>> for Session {
         };
         let token = token.value();
 
-        // Find a session from this token.
-        let Some(user_id) = state.database.find_session(token).await? else {
+        if token.len() != 64 {
+            return Err(HttpServerError::Unauthorized);
+        }
+
+        let mut token_bytes: [u8; 32] = [0; 32];
+        if hex::decode_to_slice(token, &mut token_bytes).is_err() {
             return Err(HttpServerError::Unauthorized);
         };
 
-        Ok(Self { user_id })
+        let token_hash: [u8; 32] = ServerState::hash_token_bytes(&token_bytes);
+
+        // Find a session from this token.
+        let Some(database::session::Session {
+            user_id,
+            session_id,
+        }) = state.database.find_and_update_session(&token_hash).await?
+        else {
+            return Err(HttpServerError::Unauthorized);
+        };
+
+        Ok(Self {
+            user_id,
+            session_id,
+        })
     }
 }
 
@@ -236,4 +255,11 @@ impl FromRequestParts<Arc<ServerState>> for Session {
 #[derive(Serialize)]
 pub struct FrontendUserDetails {
     pub username: String,
+}
+
+/// An enum whose only way to express success is `Successful`, without any data.
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case", tag = "status")]
+pub enum HttpSuccess {
+    Successful,
 }

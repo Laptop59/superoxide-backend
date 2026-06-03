@@ -7,7 +7,7 @@ use axum::{
     extract::State,
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use serde::{Deserialize, Serialize};
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
@@ -15,6 +15,7 @@ use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use crate::{
     http_server::{
         ApiQuery, FrontendUserDetails, HttpServer, HttpServerModule, HttpServerResponse,
+        HttpSuccess, Session,
     },
     state::{AccountLoginResult, AccountRegistrationResult, ServerState, UsernameAvailability},
 };
@@ -89,9 +90,26 @@ impl HttpServerModule for AccountsModule {
             .error_handler(HttpServer::too_many_requests_handler),
         );
 
+        // DELETE routes
+        let delete_router = Router::new()
+            .route("/sign-out", delete(Self::sign_out))
+            .layer(
+                GovernorLayer::new(
+                    GovernorConfigBuilder::default()
+                        .per_millisecond(100)
+                        .burst_size(20)
+                        .finish()
+                        .expect("Governor should have been built properly"),
+                )
+                .error_handler(HttpServer::too_many_requests_handler),
+            );
+
         router.nest(
             "/accounts",
-            get_router.merge(register_router).merge(login_router),
+            get_router
+                .merge(register_router)
+                .merge(login_router)
+                .merge(delete_router),
         )
     }
 }
@@ -162,6 +180,14 @@ impl AccountsModule {
         )
     }
 
+    async fn sign_out(
+        State(state): State<Arc<ServerState>>,
+        session: Session,
+    ) -> HttpServerResponse<Json<HttpSuccess>> {
+        state.revoke_session(session.session_id).await?;
+        Ok(Json(HttpSuccess::Successful))
+    }
+
     async fn send_new_session<T>(
         state: &ServerState,
         user_id: u64,
@@ -170,7 +196,7 @@ impl AccountsModule {
     where
         Json<T>: IntoResponse,
     {
-        let token = state.create_session_token(user_id).await?;
+        let token = state.create_session(user_id).await?;
         let mut response = Json(success).into_response();
 
         // Tell the browser to set the session token.
