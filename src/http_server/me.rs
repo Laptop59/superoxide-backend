@@ -21,7 +21,7 @@ impl HttpServerModule for MeModule {
                     .per_millisecond(150)
                     .burst_size(20)
                     .finish()
-                    .expect("Governor should have been built properly"),
+                    .expect("governor should have been built properly"),
             )
             .error_handler(HttpServer::too_many_requests_handler),
         );

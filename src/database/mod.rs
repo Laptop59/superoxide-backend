@@ -1,4 +1,5 @@
 pub mod session;
+pub mod test;
 pub mod user;
 
 use std::env::VarError;

@@ -1,0 +1,11 @@
+ALTER TABLE tests
+ADD public_id BINARY(16) NOT NULL UNIQUE;
+
+ALTER TABLE test_parts
+ADD public_id BINARY(16) NOT NULL UNIQUE;
+
+ALTER TABLE test_sections
+ADD public_id BINARY(16) NOT NULL UNIQUE;
+
+ALTER TABLE questions
+ADD public_id BINARY(16) NOT NULL UNIQUE;

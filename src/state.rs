@@ -124,7 +124,7 @@ impl ServerState {
                 .map_err(SuperoxideError::HashingError)
         })
         .await
-        .expect("Hashing thread shouldn't have panicked")
+        .expect("hashing thread shouldn't have panicked")
     }
 
     pub async fn verify_password(
@@ -145,7 +145,7 @@ impl ServerState {
             }
         })
         .await
-        .expect("Hashing thread shouldn't have panicked")
+        .expect("hashing thread shouldn't have panicked")
     }
 
     /// Takes a username and password and attempts to create an account with them.

@@ -1,5 +1,6 @@
 mod accounts;
 mod me;
+mod tests;
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -21,7 +22,7 @@ use tower_http::cors::CorsLayer;
 use crate::{
     database::{self, DatabaseError},
     error::{SuperoxideError, SuperoxideResult},
-    http_server::{accounts::AccountsModule, me::MeModule},
+    http_server::{accounts::AccountsModule, me::MeModule, tests::TestsModule},
     state::ServerState,
 };
 
@@ -50,6 +51,7 @@ impl HttpServer {
             .route("/", get(Self::status))
             .register::<AccountsModule>()
             .register::<MeModule>()
+            .register::<TestsModule>()
             .fallback(Self::not_found)
             .layer(cors)
             .with_state(self.server_state);

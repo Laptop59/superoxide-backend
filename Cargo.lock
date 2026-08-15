@@ -255,6 +255,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -1683,6 +1684,7 @@ dependencies = [
  "base64",
  "bytes",
  "cfg-if",
+ "chrono",
  "crc",
  "crossbeam-queue",
  "either",
@@ -1758,6 +1760,7 @@ dependencies = [
  "bitflags",
  "byteorder",
  "bytes",
+ "chrono",
  "crc",
  "digest 0.11.3",
  "dotenvy",
@@ -1785,6 +1788,7 @@ dependencies = [
  "base64",
  "bitflags",
  "byteorder",
+ "chrono",
  "crc",
  "dotenvy",
  "etcetera",
@@ -1817,6 +1821,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488e99c397a62007e4229aec669a179816339afc6d2620ca6fa420dbee2e982c"
 dependencies = [
  "atoi",
+ "chrono",
  "flume",
  "form_urlencoded",
  "futures-channel",
@@ -1878,6 +1883,7 @@ dependencies = [
  "tower_governor",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -2282,6 +2288,17 @@ name = "utf8_iter"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
+
+[[package]]
+name = "uuid"
+version = "1.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cefc03fd367c0c6d4305de1b312cf00248c4114f4a0418ce6a6af769e3b0bd9"
+dependencies = [
+ "js-sys",
+ "serde_core",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "valuable"
