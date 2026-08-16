@@ -2,7 +2,11 @@
 
 use std::sync::Arc;
 
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{
+    Json, Router,
+    extract::State,
+    routing::{get, post},
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
@@ -22,17 +26,33 @@ pub struct MyTestsResponse {
 #[derive(Serialize, Deserialize)]
 pub struct TestEntry {
     pub id: Uuid,
+
     pub name: String,
+
+    #[serde(rename = "type")]
     pub test_type: TestType,
+
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateTestRequest {
+    pub name: String,
+
+    #[serde(rename = "type")]
+    pub test_type: TestType,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateTestResponse {
+    pub id: Uuid,
 }
 
 pub struct TestsModule;
 
 impl HttpServerModule for TestsModule {
     fn configure(router: Router<Arc<ServerState>>) -> Router<Arc<ServerState>> {
-        // My Tests route
-        let get_router = Router::new().route("/my-tests", get(my_tests)).layer(
+        let my_tests_router = Router::new().route("/my-tests", get(my_tests)).layer(
             GovernorLayer::new(
                 GovernorConfigBuilder::default()
                     .per_millisecond(200)
@@ -43,11 +63,21 @@ impl HttpServerModule for TestsModule {
             .error_handler(HttpServer::too_many_requests_handler),
         );
 
-        router.nest("/tests", get_router)
+        let create_test_router = Router::new().route("/create", post(create_test)).layer(
+            GovernorLayer::new(
+                GovernorConfigBuilder::default()
+                    .per_millisecond(1000)
+                    .burst_size(10)
+                    .finish()
+                    .expect("governor should have been built properly"),
+            )
+            .error_handler(HttpServer::too_many_requests_handler),
+        );
+
+        router.nest("/tests", my_tests_router.merge(create_test_router))
     }
 }
 
-#[axum::debug_handler]
 async fn my_tests(
     State(state): State<Arc<ServerState>>,
     session: Session,
@@ -66,4 +96,18 @@ async fn my_tests(
         .collect();
 
     Ok(Json(MyTestsResponse { tests }))
+}
+
+async fn create_test(
+    State(state): State<Arc<ServerState>>,
+    session: Session,
+    Json(query): Json<CreateTestRequest>,
+) -> HttpServerResponse<Json<CreateTestResponse>> {
+    let id = Uuid::new_v4();
+    state
+        .database
+        .create_test(session.user_id, &query.name, query.test_type, id)
+        .await?;
+
+    Ok(Json(CreateTestResponse { id }))
 }

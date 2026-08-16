@@ -1,6 +1,8 @@
 //! This file implements the test-related functions on the database.
 //! This includes, but is not limited to, tests, sections, parts, and questions.
 
+use std::fmt::Display;
+
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -9,7 +11,7 @@ use uuid::Uuid;
 use crate::database::{Database, DatabaseError};
 
 /// Represents the type of a test.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TestType {
     Objective,
@@ -33,6 +35,21 @@ impl TryFrom<String> for TestType {
     }
 }
 
+impl TestType {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Objective => "objective",
+            Self::Subjective => "subjective",
+        }
+    }
+}
+
+impl Display for TestType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Represents a test on the surface. It contains the test's:
 /// - public ID,
 /// - name,
@@ -53,7 +70,7 @@ impl Database {
             r#"
                 SELECT public_id, name, type AS test_type, updated_at FROM tests
                 WHERE created_by = ?
-                "#,
+            "#,
             user_id
         )
         .fetch_all(&self.pool)
@@ -72,5 +89,34 @@ impl Database {
         .collect();
 
         Ok(entries)
+    }
+
+    /// Creates a test with some initial data. If successful, this function returns the newly created test's internal ID.
+    pub async fn create_test(
+        &self,
+        user_id: u64,
+        name: &str,
+        test_type: TestType,
+        public_id: Uuid,
+    ) -> Result<u64, DatabaseError> {
+        Ok(sqlx::query!(
+            r#"
+                    INSERT INTO tests (
+                        name,
+                        type,
+                        public_id,
+                        created_by,
+                        created_at,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+                "#,
+            name,
+            test_type.as_str(),
+            public_id.as_bytes().as_slice(),
+            user_id,
+        )
+        .execute(&self.pool)
+        .await?
+        .last_insert_id())
     }
 }
