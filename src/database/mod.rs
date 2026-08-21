@@ -69,7 +69,7 @@ impl Database {
     }
 }
 
-/// Represents a database error that has occured.
+/// Represents a database error that has occurred.
 #[derive(Debug)]
 pub struct DatabaseError {
     inner: sqlx::Error,

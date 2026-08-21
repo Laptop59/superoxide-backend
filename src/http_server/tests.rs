@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::State,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -14,17 +14,19 @@ use uuid::Uuid;
 
 use crate::{
     database::test::TestType,
-    http_server::{HttpServer, HttpServerModule, HttpServerResponse, Session},
+    http_server::{
+        HttpServer, HttpServerError, HttpServerModule, HttpServerResponse, HttpSuccess, Session,
+    },
     state::ServerState,
 };
 
 #[derive(Serialize, Deserialize)]
-pub struct MyTestsResponse {
+pub(crate) struct MyTestsResponse {
     pub tests: Vec<TestEntry>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct TestEntry {
+pub(crate) struct TestEntry {
     pub id: Uuid,
 
     pub name: String,
@@ -36,7 +38,7 @@ pub struct TestEntry {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct CreateTestRequest {
+pub(crate) struct CreateTestRequest {
     pub name: String,
 
     #[serde(rename = "type")]
@@ -44,7 +46,12 @@ pub struct CreateTestRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct CreateTestResponse {
+pub(crate) struct CreateTestResponse {
+    pub id: Uuid,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct DeleteTestRequest {
     pub id: Uuid,
 }
 
@@ -74,7 +81,23 @@ impl HttpServerModule for TestsModule {
             .error_handler(HttpServer::too_many_requests_handler),
         );
 
-        router.nest("/tests", my_tests_router.merge(create_test_router))
+        let delete_test_router = Router::new().route("/delete", delete(delete_test)).layer(
+            GovernorLayer::new(
+                GovernorConfigBuilder::default()
+                    .per_millisecond(1000)
+                    .burst_size(10)
+                    .finish()
+                    .expect("governor should have been built properly"),
+            )
+            .error_handler(HttpServer::too_many_requests_handler),
+        );
+
+        router.nest(
+            "/tests",
+            my_tests_router
+                .merge(create_test_router)
+                .merge(delete_test_router),
+        )
     }
 }
 
@@ -110,4 +133,21 @@ async fn create_test(
         .await?;
 
     Ok(Json(CreateTestResponse { id }))
+}
+
+async fn delete_test(
+    State(state): State<Arc<ServerState>>,
+    session: Session,
+    Json(query): Json<DeleteTestRequest>,
+) -> HttpServerResponse<Json<HttpSuccess>> {
+    let result = state
+        .database
+        .delete_test(session.user_id, query.id)
+        .await?;
+
+    if result {
+        Ok(Json(HttpSuccess::Successful))
+    } else {
+        Err(HttpServerError::NotFound)
+    }
 }

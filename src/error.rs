@@ -47,10 +47,10 @@ pub enum SuperoxideError {
     )]
     InvalidUnicodeCredentials = 7,
 
-    #[error("Database error occured: {0}")]
+    #[error("Database error occurred: {0}")]
     DatabaseError(DatabaseError) = 8,
 
-    /// A hashing error occured.
+    /// A hashing error occurred.
     #[error("Hashing failed: {0}")]
     HashingError(argon2::password_hash::Error) = 9,
 }

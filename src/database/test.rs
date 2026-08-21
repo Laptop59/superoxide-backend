@@ -119,4 +119,23 @@ impl Database {
         .await?
         .last_insert_id())
     }
+
+    /// Deletes a test from its public ID if the user provided is the owner of it.
+    /// Returns whether deletion succeeded.
+    // TODO: Add support for permissions
+    pub async fn delete_test(&self, user_id: u64, public_id: Uuid) -> Result<bool, DatabaseError> {
+        let result = sqlx::query!(
+            r#"
+                DELETE FROM tests
+                WHERE
+                    created_by = ? AND public_id = ?
+            "#,
+            user_id,
+            public_id.as_bytes().as_slice()
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() == 1)
+    }
 }
